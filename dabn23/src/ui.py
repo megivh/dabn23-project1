@@ -93,23 +93,23 @@ def print_opening_hours(summary: Dict[str, Any]) -> None:
         print(line)
 
 
+from typing import Any, Callable, Dict, List, Optional
+import ipywidgets as widgets
+from IPython.display import display
+
 def build_city_widget(
     search_fn: Callable[[str], List[Dict[str, Any]]],
     *,
     default_city: str = "Paris",
     title: Optional[str] = None,
-) -> None:
+    selenium_fn: Optional[Callable[[str], None]] = None,  # optional: run automatically after search
+):
     """
-    Build and display a simplified city-only search widget.
+    City-only widget with ONE button.
 
-    Parameters
-    ----------
-    search_fn : callable
-        Function signature: search_fn(city) -> results list
-    default_city : str
-        Prefilled city value.
-    title : str | None
-        Optional header text above the widget.
+    - Click "Search Top 10" -> runs search_fn(city) and displays results
+    - Stores last searched city in returned state dict and in build_city_widget.last_city
+    - If selenium_fn is provided, runs it right after search using the same city
     """
     if title:
         display(widgets.HTML(f"<b>{title}</b>"))
@@ -121,10 +121,13 @@ def build_city_widget(
         layout=widgets.Layout(width="420px"),
     )
 
-    button = widgets.Button(description="Search Top 10", button_style="primary")
+    btn_search = widgets.Button(description="Search Top 10", button_style="primary")
     output = widgets.Output()
 
-    def on_click(_):
+    # Exposed state you can read later
+    state: Dict[str, Any] = {"last_city": None, "last_results": None}
+
+    def on_search(_):
         with output:
             output.clear_output()
 
@@ -133,74 +136,40 @@ def build_city_widget(
                 print("Please enter a city name.")
                 return
 
+            # store for later access (robust in notebooks)
+            global LAST_SEARCHED_CITY, LAST_SEARCH_RESULTS
+            LAST_SEARCHED_CITY = city
+
+            # (optional) keep state dict too if you still want it
+            state["last_city"] = city
+
             print(f"Searching Top 10 | city='{city}'\n")
 
             try:
                 results = search_fn(city)
+
+                # store results for later access
+                LAST_SEARCH_RESULTS = results
+                state["last_results"] = results
+
                 if not results:
                     print("No results found.")
                     return
 
                 display(results_to_dataframe(results))
 
-            except Exception as e:
-                print("Error:", str(e))
-
-    button.on_click(on_click)
-
-    display(
-        widgets.VBox([
-            widgets.HBox([city_input, button]),
-            output,
-        ])
-    )
-
-
-
-def build_city_widget(
-    search_fn: Callable[[str], List[Dict[str, Any]]],
-    default_city: str = "Stockholm",
-) -> None:
-    """
-    City-only UI widget.
-
-    Expects:
-        search_fn(city: str) -> List[dict]
-    """
-    city_input = widgets.Text(
-        value=default_city,
-        description="City:",
-        placeholder="e.g., Paris, Rome, Stockholm",
-        layout=widgets.Layout(width="420px"),
-    )
-
-    button = widgets.Button(description="Search Top 10", button_style="primary")
-    output = widgets.Output()
-
-    def on_click(_):
-        with output:
-            clear_output()
-            city = city_input.value.strip()
-            if not city:
-                print("Please enter a city name.")
-                return
-
-            print(f"Searching Top 10 | city='{city}'\n")
-
-            try:
-                results = search_fn(city)
-                if not results:
-                    print("No results found.")
-                    return
-
-                display(results_to_dataframe(results))
+                # Optional: run selenium immediately after search (no extra button)
+                if selenium_fn is not None:
+                    print("\nRunning Selenium...\n")
+                    selenium_fn(city)
 
             except Exception as e:
                 print("Error:", str(e))
-
-    button.on_click(on_click)
+    btn_search.on_click(on_search)
 
     display(widgets.VBox([
-        widgets.HBox([city_input, button]),
-        output
+        widgets.HBox([city_input, btn_search]),
+        output,
     ]))
+
+    return state
